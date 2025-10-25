@@ -82,15 +82,18 @@ app.get('/api/demo', async (req, res) => {
       ingestion: {
         statementId: 'stmt-jan-2024',
         verificationStatus: ingestionResult.verificationStatus,
-        transactionsProcessed: ingestionResult.processedTransactions.length,
+        transactionsProcessed: ingestionResult.statement.transactions.length,
       },
       advice: {
         count: advice.length,
         recommendations: advice.map((item) => ({
+          id: item.id,
+          type: item.type,
           title: item.title,
           summary: item.summary,
-          priority: item.priority,
-          category: item.category,
+          rationale: item.rationale,
+          impactEstimate: item.impactEstimate,
+          createdAt: item.createdAt,
         })),
       },
     });
@@ -129,8 +132,8 @@ app.post('/api/ingest', async (req, res) => {
       success: true,
       statementId,
       verificationStatus: ingestionResult.verificationStatus,
-      transactionsProcessed: ingestionResult.processedTransactions.length,
-      transactions: ingestionResult.processedTransactions.map((t) => ({
+      transactionsProcessed: ingestionResult.statement.transactions.length,
+      transactions: ingestionResult.statement.transactions.map((t) => ({
         id: t.id,
         description: t.description,
         amount: t.amount,
@@ -166,12 +169,12 @@ app.get('/api/advice/:userId', async (req, res) => {
       adviceCount: advice.length,
       recommendations: advice.map((item) => ({
         id: item.id,
+        type: item.type,
         title: item.title,
         summary: item.summary,
-        description: item.description,
-        priority: item.priority,
-        category: item.category,
-        generatedAt: item.generatedAt,
+        rationale: item.rationale,
+        impactEstimate: item.impactEstimate,
+        createdAt: item.createdAt,
       })),
     });
   } catch (error) {
