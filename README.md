@@ -45,6 +45,31 @@ The example bootstrap (`src/index.ts`) uses structured metadata to simulate a pa
   - `categorizer/RuleBasedCategorizer`, `fx/CachedFxConverter`, `advice/RuleBasedAdviceEngine`: simple defaults ready to swap.
 - `src/infrastructure/bootstrap/AppContainer`: assembles dependencies based on config and supports overrides for testing.
 
+## Frontend (Vite + React)
+
+The `apps/web` project provides a React-based client for three core flows:
+
+1. **Upload & sync**: ingest PDF statements or trigger a Plaid link (mocked locally) to refresh the in-memory dataset.
+2. **Insights dashboard**: review cashflow trends, account balances, and category allocations rendered with Recharts.
+3. **Advice assistant**: ask free-form questions; the demo responds with rule-driven recommendations derived from the synced data.
+
+### Running the web client
+
+```bash
+npm run web:install   # installs frontend dependencies (once)
+npm run web:dev       # starts Vite dev server on http://localhost:5173
+```
+
+Build and preview production assets:
+
+```bash
+npm run web:build
+npm run web:preview
+```
+
+The frontend currently uses local state to simulate backend responses. Replace the data provider in
+`apps/web/src/context/FinancialDataContext.tsx` with real API calls once the backend endpoints are exposed.
+
 ## Next Steps
 
 - Implement production-ready adapters:
