@@ -17,7 +17,7 @@ const run = async () => {
       end: '2024-01-31',
     },
     openingBalance: 1500,
-    closingBalance: 2100,
+    closingBalance: 3810,
     transactions: [
       {
         externalId: 'txn-001',
