@@ -54,3 +54,39 @@ The example bootstrap (`src/index.ts`) uses structured metadata to simulate a pa
 - Expand advice rules and analytics (cash flow trends, investment diversification).
 - Add automated tests (unit tests for services, contract tests for adapters, end-to-end ingestion scenarios).
 - Introduce HTTP APIs (REST/gRPC) and message queue (for async ingestion) around the application services.
+
+## Deploying to Heroku
+
+1. Ensure the TypeScript build succeeds locally:
+   ```bash
+   npm install
+   npm run build
+   ```
+2. Create a Heroku app (once per environment):
+   ```bash
+   heroku create wealth-management-app
+   ```
+3. Provision required config vars and secrets:
+   ```bash
+   heroku config:set \
+     BOUNDARY_ML_API_KEY=your-key \
+     BOUNDARY_ML_ENV=production \
+     PLAID_CLIENT_ID=your-client-id \
+     PLAID_SECRET=your-secret \
+     APP_BASE_CURRENCY=USD
+   ```
+4. Push the repository:
+   ```bash
+   heroku git:remote -a wealth-management-app
+   git push heroku main
+   ```
+5. Scale the worker dyno (the app runs as a background worker):
+   ```bash
+   heroku ps:scale worker=1
+   ```
+6. Tail logs to verify ingestion/advice jobs:
+   ```bash
+   heroku logs --tail
+   ```
+
+The `Procfile` configures Heroku to run `npm start`, which executes the compiled Node entrypoint in `dist/index.js`. The `heroku-postbuild` script automatically compiles TypeScript during deployment.

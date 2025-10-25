@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "ts-node src/index.ts",
-    "start:watch": "ts-node-dev --respawn src/index.ts",
-    "test": "node --test"
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "test": "node --test",
+    "heroku-postbuild": "npm run build"
+  },
+  "engines": {
+    "node": ">=20.0.0 <21"
   },
   "dependencies": {
     "zod": "^3.23.8"
