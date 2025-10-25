@@ -8,7 +8,7 @@
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn src/index.ts",
     "test": "node --test",
-    "heroku-postbuild": "npm run build",
+    "heroku-postbuild": "npm run build && npm run web:install && npm run web:build",
     "web:install": "npm install --prefix apps/web",
     "web:dev": "npm run dev --prefix apps/web",
     "web:build": "npm run build --prefix apps/web",

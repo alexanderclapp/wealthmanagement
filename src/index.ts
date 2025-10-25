@@ -1,11 +1,20 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { AppContainer } from './infrastructure/bootstrap/AppContainer.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 3000;
 const container = new AppContainer();
 
 app.use(express.json());
+
+// Serve static files from the frontend build
+const frontendPath = path.join(__dirname, '../apps/web/dist');
+app.use(express.static(frontendPath));
 
 // Health check / welcome page
 app.get('/', (req, res) => {
@@ -185,18 +194,21 @@ app.get('/api/advice/:userId', async (req, res) => {
   }
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Endpoint not found',
-    availableEndpoints: {
-      health: 'GET /',
-      demo: 'GET /api/demo',
-      ingest: 'POST /api/ingest',
-      advice: 'GET /api/advice/:userId',
-    },
-  });
+// Serve the frontend for all non-API routes (SPA fallback)
+app.get('*', (req, res, next) => {
+  // Only serve index.html for non-API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({
+      success: false,
+      error: 'API endpoint not found',
+      availableEndpoints: {
+        demo: 'GET /api/demo',
+        ingest: 'POST /api/ingest',
+        advice: 'GET /api/advice/:userId',
+      },
+    });
+  }
+  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
 // Start the server
