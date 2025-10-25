@@ -1,0 +1,5 @@
+gitdata_store/
+.gitdata/
+node_modules/
+dist/
+.env

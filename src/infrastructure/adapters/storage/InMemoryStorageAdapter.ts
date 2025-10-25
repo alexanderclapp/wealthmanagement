@@ -1,0 +1,68 @@
+import { Account } from '../../../domain/entities/Account.js';
+import { AdviceRecommendation } from '../../../domain/entities/AdviceRecommendation.js';
+import { Statement } from '../../../domain/entities/Statement.js';
+import { Transaction } from '../../../domain/entities/Transaction.js';
+import { VerificationReportDTO } from '../../../application/dto/VerificationReportDTO.js';
+import { StoragePort } from '../../../application/ports/StoragePort.js';
+
+export class InMemoryStorageAdapter implements StoragePort {
+  private readonly accounts = new Map<string, Account>();
+  private readonly statements = new Map<string, Statement>();
+  private readonly transactions = new Map<string, Transaction>();
+  private readonly advice = new Map<string, AdviceRecommendation>();
+  private readonly verifications = new Map<string, VerificationReportDTO>();
+
+  async upsertAccount(account: Account): Promise<void> {
+    this.accounts.set(account.id, account);
+  }
+
+  async bulkUpsertTransactions(transactions: Transaction[]): Promise<void> {
+    for (const txn of transactions) {
+      this.transactions.set(txn.dedupeHash, txn);
+    }
+  }
+
+  async saveStatement(statement: Statement): Promise<void> {
+    this.statements.set(statement.id, statement);
+  }
+
+  async saveVerificationReport(report: VerificationReportDTO): Promise<void> {
+    this.verifications.set(report.statementId, report);
+  }
+
+  async loadStatement(statementId: string): Promise<Statement | null> {
+    return this.statements.get(statementId) ?? null;
+  }
+
+  async loadLatestAccountSnapshot(accountId: string): Promise<Account | null> {
+    return this.accounts.get(accountId) ?? null;
+  }
+
+  async loadTransactions(
+    accountId: string,
+    params: { startDate?: string | undefined; endDate?: string | undefined },
+  ): Promise<Transaction[]> {
+    const allTransactions = Array.from(this.transactions.values()).filter((txn) => txn.accountId === accountId);
+
+    return allTransactions.filter((txn) => {
+      const afterStart = params.startDate ? txn.postedDate >= params.startDate : true;
+      const beforeEnd = params.endDate ? txn.postedDate <= params.endDate : true;
+      return afterStart && beforeEnd;
+    });
+  }
+
+  async loadAdviceContext(userId: string): Promise<{ accounts: Account[]; transactions: Transaction[] }> {
+    // In-memory adapter stores no tenancy; real implementations should filter by userId.
+    const accounts = Array.from(this.accounts.values()).filter((account) => account.metadata?.userId === userId);
+    const accountIds = new Set(accounts.map((account) => account.id));
+    const transactions = Array.from(this.transactions.values()).filter((txn) => accountIds.has(txn.accountId));
+
+    return { accounts, transactions };
+  }
+
+  async saveAdviceRecommendations(advice: AdviceRecommendation[]): Promise<void> {
+    for (const recommendation of advice) {
+      this.advice.set(recommendation.id, recommendation);
+    }
+  }
+}
