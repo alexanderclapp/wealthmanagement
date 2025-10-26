@@ -1,3 +1,4 @@
+import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
 import { IngestionService } from '../../application/services/IngestionService.js';
 import { IngestionValidationService } from '../../application/services/IngestionValidationService.js';
 import { SyncService } from '../../application/services/SyncService.js';
@@ -31,6 +32,7 @@ export interface AppContainerOverrides {
 
 export class AppContainer {
   readonly config = loadConfig();
+  private readonly plaidLive: boolean;
 
   readonly parser: StatementParserPort;
   readonly storage: StoragePort;
@@ -50,11 +52,37 @@ export class AppContainer {
     this.categorizer = overrides.categorizer ?? new RuleBasedCategorizer();
     this.fxConverter = overrides.fxConverter ?? new CachedFxConverter();
     this.adviceEngine = overrides.adviceEngine ?? new RuleBasedAdviceEngine();
-    this.aggregator =
-      overrides.aggregator ??
-      new PlaidBankAggregatorAdapter(null, {
-        mockData: { accounts: [], transactions: [] },
-      });
+
+    if (overrides.aggregator) {
+      this.aggregator = overrides.aggregator;
+      this.plaidLive =
+        overrides.aggregator instanceof PlaidBankAggregatorAdapter ? overrides.aggregator.isLive() : false;
+    } else {
+      const plaidConfig = this.config.plaid;
+
+      if (plaidConfig.clientId && plaidConfig.secret) {
+        const configuration = new Configuration({
+          basePath: PlaidEnvironments[plaidConfig.environment],
+          baseOptions: {
+            headers: {
+              'PLAID-CLIENT-ID': plaidConfig.clientId,
+              'PLAID-SECRET': plaidConfig.secret,
+            },
+          },
+        });
+
+        const plaidClient = new PlaidApi(configuration);
+        const adapter = new PlaidBankAggregatorAdapter(plaidClient);
+        this.aggregator = adapter;
+        this.plaidLive = adapter.isLive();
+      } else {
+        const adapter = new PlaidBankAggregatorAdapter(null, {
+          mockData: { accounts: [], transactions: [] },
+        });
+        this.aggregator = adapter;
+        this.plaidLive = false;
+      }
+    }
 
     const boundaryConfig = this.config.boundaryML;
 
@@ -81,5 +109,9 @@ export class AppContainer {
 
     this.syncService = new SyncService(this.aggregator, this.storage, this.categorizer, this.fxConverter);
     this.adviceService = new AdviceService(this.storage, this.adviceEngine);
+  }
+
+  hasLivePlaid(): boolean {
+    return this.plaidLive;
   }
 }

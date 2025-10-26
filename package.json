@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "dev": "ts-node-dev --respawn src/index.ts",
+    "start": "node dist/server.js",
+    "dev": "ts-node-dev --respawn src/server.ts",
     "test": "node --test",
     "heroku-postbuild": "npm run build && npm run web:install && npm run web:build",
-    "web:install": "cd apps/web && NODE_ENV=development npm install --legacy-peer-deps && cd ../..",
+    "web:install": "npm install --prefix apps/web",
     "web:dev": "npm run dev --prefix apps/web",
     "web:build": "npm run build --prefix apps/web",
     "web:preview": "npm run preview --prefix apps/web"
@@ -18,10 +18,14 @@
     "node": ">=20.0.0 <21"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.11",
     "express": "^4.18.2",
+    "plaid": "^20.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.30",
     "ts-node": "^10.9.2",

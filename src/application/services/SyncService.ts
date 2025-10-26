@@ -12,6 +12,7 @@ export interface SyncAccountParams {
   startDate: string;
   endDate: string;
   baseCurrency?: string;
+  userId: string;
 }
 
 export class SyncService {
@@ -38,7 +39,10 @@ export class SyncService {
         currency: extAccount.currency,
         balance: extAccount.balance,
         asOf: extAccount.asOf,
-        metadata: extAccount.metadata,
+        metadata: {
+          ...extAccount.metadata,
+          userId: params.userId,
+        },
       };
 
       accounts.push(account);
@@ -119,6 +123,7 @@ export class SyncService {
             originalCurrency: txn.currency,
             convertedCurrency: needsConversion ? params.baseCurrency : undefined,
             conversionRate,
+            userId: params.userId,
           },
         };
 

@@ -17,20 +17,26 @@ This project provides a hexagonal (ports-and-adapters) TypeScript implementation
    ```bash
    npm install
    ```
-2. Configure environment variables in `.env` (optional):
+2. Configure environment variables in `.env` (create from `.env.example` if available):
    ```bash
    BOUNDARY_ML_API_KEY=your-key
    BOUNDARY_ML_ENV=sandbox
-   PLAID_CLIENT_ID=your-client-id
-   PLAID_SECRET=your-secret
+   PLAID_CLIENT_ID=your-plaid-client-id
+   PLAID_SECRET=your-plaid-secret
+   PLAID_ENVIRONMENT=sandbox
    APP_BASE_CURRENCY=USD
+   VITE_API_BASE_URL=http://localhost:4000
    ```
-3. Run the example bootstrap:
+3. Start the backend API (Express server with Plaid + ingestion endpoints):
    ```bash
-   npm start
+   npm run dev
    ```
-
-The example bootstrap (`src/index.ts`) uses structured metadata to simulate a parsed statement, routes it through ingestion and advice generation, and prints resulting recommendations.
+4. In another terminal, run the frontend:
+   ```bash
+   npm run web:install   # first time only
+   npm run web:dev
+   ```
+   Visit http://localhost:5173. The client calls the backend (`VITE_API_BASE_URL`) for Plaid Link tokens, syncing, and financial summaries.
 
 ## Key Modules
 
@@ -49,7 +55,7 @@ The example bootstrap (`src/index.ts`) uses structured metadata to simulate a pa
 
 The `apps/web` project provides a React-based client for three core flows:
 
-1. **Upload & sync**: ingest PDF statements or trigger a Plaid link (mocked locally) to refresh the in-memory dataset.
+1. **Upload & sync**: upload PDF statements (stubbed) or launch Plaid Link to synchronise live balances and transactions.
 2. **Insights dashboard**: review cashflow trends, account balances, and category allocations rendered with Recharts.
 3. **Advice assistant**: ask free-form questions; the demo responds with rule-driven recommendations derived from the synced data.
 
@@ -67,8 +73,22 @@ npm run web:build
 npm run web:preview
 ```
 
-The frontend currently uses local state to simulate backend responses. Replace the data provider in
-`apps/web/src/context/FinancialDataContext.tsx` with real API calls once the backend endpoints are exposed.
+The React context at `apps/web/src/context/FinancialDataContext.tsx` now calls the Express API for financial summaries, Plaid link token creation, and transaction sync. When the API is unreachable the UI falls back to locally-generated sample data.
+
+## Plaid Integration
+
+1. Obtain a Plaid **Client ID** and **Secret** (sandbox values work for development).
+2. Update `.env` with the credentials and environment, e.g.:
+   ```bash
+   PLAID_CLIENT_ID=68fe51493089da001f9661fd
+   PLAID_SECRET=2882b46dbb8e1ec0510bd143c09f22
+   PLAID_ENVIRONMENT=sandbox
+   ```
+3. Ensure `VITE_API_BASE_URL` points to the backend server (default `http://localhost:4000`).
+4. Restart `npm run dev` so the server rebuilds with the new configuration.
+5. In the web client, click **Connect with Plaid**. The backend issues a link token, exchanges the public token, triggers a `SyncService` pull, and returns a refreshed financial summary to the dashboard.
+
+If Plaid credentials are missing, the server responds with HTTP 503 and the UI displays the error message.
 
 ## Next Steps
 
@@ -98,6 +118,7 @@ The frontend currently uses local state to simulate backend responses. Replace t
      BOUNDARY_ML_ENV=production \
      PLAID_CLIENT_ID=your-client-id \
      PLAID_SECRET=your-secret \
+     PLAID_ENVIRONMENT=production \
      APP_BASE_CURRENCY=USD
    ```
 4. Push the repository:
@@ -105,13 +126,13 @@ The frontend currently uses local state to simulate backend responses. Replace t
    heroku git:remote -a wealth-management-app
    git push heroku main
    ```
-5. Scale the worker dyno (the app runs as a background worker):
+5. Scale the web dyno:
    ```bash
-   heroku ps:scale worker=1
+   heroku ps:scale web=1
    ```
 6. Tail logs to verify ingestion/advice jobs:
    ```bash
    heroku logs --tail
    ```
 
-The `Procfile` configures Heroku to run `npm start`, which executes the compiled Node entrypoint in `dist/index.js`. The `heroku-postbuild` script automatically compiles TypeScript during deployment.
+The `Procfile` configures Heroku to run `npm start`, which executes the compiled API in `dist/server.js`. The `heroku-postbuild` script builds both the backend and the React frontend so static assets can be served directly from the same dyno.

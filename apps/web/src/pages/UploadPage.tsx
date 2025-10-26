@@ -1,11 +1,14 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useFinancialData } from '../context/FinancialDataContext';
+import { usePlaidLink } from 'react-plaid-link';
 
 const UploadPage = () => {
-  const { ingestPdf, triggerPlaidLink, state } = useFinancialData();
+  const { ingestPdf, requestLinkToken, completePlaidLink, state } = useFinancialData();
   const [uploading, setUploading] = useState(false);
   const [plaidLoading, setPlaidLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [plaidError, setPlaidError] = useState<string | null>(null);
+  const [linkToken, setLinkToken] = useState<string | null>(null);
 
   const handleUpload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,12 +37,13 @@ const UploadPage = () => {
   const handlePlaid = async () => {
     setPlaidLoading(true);
     setMessage(null);
+    setPlaidError(null);
     try {
-      await triggerPlaidLink();
-      setMessage('Plaid connection established. Data refreshed.');
+      const token = await requestLinkToken();
+      setLinkToken(token);
     } catch (error) {
       console.error(error);
-      setMessage('Plaid link failed. Please retry.');
+      setPlaidError(error instanceof Error ? error.message : 'Plaid link failed. Please retry.');
     } finally {
       setPlaidLoading(false);
     }
@@ -86,6 +90,33 @@ const UploadPage = () => {
           {message}
         </div>
       )}
+
+      {plaidError && (
+        <div className="chip" style={{ marginTop: 16, background: '#fee2e2', color: '#b91c1c' }}>
+          {plaidError}
+        </div>
+      )}
+
+      {linkToken && (
+        <PlaidLinkLauncher
+          token={linkToken}
+          onSuccess={async (publicToken) => {
+            try {
+              await completePlaidLink(publicToken);
+              setPlaidError(null);
+              setMessage('Plaid connection established. Data refreshed.');
+            } catch (error) {
+              const err = error instanceof Error ? error.message : 'Plaid link failed. Please retry.';
+              setPlaidError(err);
+            } finally {
+              setLinkToken(null);
+            }
+          }}
+          onExit={() => {
+            setLinkToken(null);
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -102,3 +133,29 @@ const buttonStyle: React.CSSProperties = {
 };
 
 export default UploadPage;
+
+const PlaidLinkLauncher = ({
+  token,
+  onSuccess,
+  onExit,
+}: {
+  token: string;
+  onSuccess: (publicToken: string) => Promise<void>;
+  onExit: () => void;
+}) => {
+  const { open, ready } = usePlaidLink({
+    token,
+    onSuccess: async (publicToken) => {
+      await onSuccess(publicToken);
+    },
+    onExit,
+  });
+
+  useEffect(() => {
+    if (ready) {
+      open();
+    }
+  }, [ready, open]);
+
+  return null;
+};

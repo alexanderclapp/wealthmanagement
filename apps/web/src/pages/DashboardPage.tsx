@@ -18,7 +18,7 @@ import {
 const palette = ['#2563eb', '#14b8a6', '#f97316', '#facc15', '#8b5cf6'];
 
 const DashboardPage = () => {
-  const { state } = useFinancialData();
+  const { state, loading } = useFinancialData();
   const navigate = useNavigate();
 
   const totals = useMemo(() => {
@@ -35,6 +35,15 @@ const DashboardPage = () => {
       averageNet: avgNet,
     };
   }, [state.accounts, state.cashflow]);
+
+  if (loading) {
+    return (
+      <div className="card">
+        <h2>Loading financial insights…</h2>
+        <p>Fetching the latest account data. This may take a moment right after linking Plaid.</p>
+      </div>
+    );
+  }
 
   if (!totals) {
     return (
