@@ -83,11 +83,11 @@ export class PlaidBankAggregatorAdapter implements BankAggregatorPort {
 
     return response.data.accounts.map((account) => ({
       id: account.account_id,
-      institutionId: account.institution_id ?? this.config.institutionId ?? 'plaid',
+      institutionId: this.config.institutionId ?? 'plaid',
       name: account.official_name ?? account.name,
-      mask: account.mask,
+      mask: account.mask ?? undefined,
       type: account.type,
-      subtype: account.subtype,
+      subtype: account.subtype ?? undefined,
       currency: account.balances.iso_currency_code ?? 'USD',
       balance: account.balances.current ?? 0,
       availableBalance: account.balances.available ?? undefined,
@@ -121,7 +121,7 @@ export class PlaidBankAggregatorAdapter implements BankAggregatorPort {
       id: txn.transaction_id,
       accountId: txn.account_id,
       description: txn.name,
-      merchantName: txn.merchant_name,
+      merchantName: txn.merchant_name ?? undefined,
       amount: txn.amount * -1, // Plaid uses positive for debits, convert to signed domain convention.
       currency: txn.iso_currency_code ?? 'USD',
       postedAt: txn.date,
