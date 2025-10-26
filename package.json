@@ -9,7 +9,7 @@
     "dev": "ts-node-dev --respawn src/server.ts",
     "test": "node --test",
     "heroku-postbuild": "npm run build && npm run web:install && npm run web:build",
-    "web:install": "npm install --prefix apps/web",
+    "web:install": "cd apps/web && NODE_ENV=development npm install --legacy-peer-deps",
     "web:dev": "npm run dev --prefix apps/web",
     "web:build": "npm run build --prefix apps/web",
     "web:preview": "npm run preview --prefix apps/web"
