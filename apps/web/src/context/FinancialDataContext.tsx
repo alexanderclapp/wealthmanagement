@@ -41,7 +41,7 @@ type FinancialAction =
   | { type: 'ASK_QUESTION'; payload: { question: string } }
   | { type: 'RECEIVE_ADVICE'; payload: { reply: string } };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 const DEMO_USER_ID = 'user-001';
 
 const initialState: FinancialState = {
