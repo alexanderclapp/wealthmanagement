@@ -28,10 +28,21 @@ export interface AdviceMessage {
   createdAt: string;
 }
 
+export interface Transaction {
+  id: string;
+  accountId: string;
+  postedDate: string;
+  description: string;
+  amount: number;
+  currency: string;
+  category?: string;
+}
+
 export interface FinancialState {
   accounts: AccountSnapshot[];
   cashflow: CashflowPoint[];
   categories: CategoryBreakdown[];
+  transactions: Transaction[];
   lastUpdated?: string;
   adviceHistory: AdviceMessage[];
 }
@@ -48,6 +59,7 @@ const initialState: FinancialState = {
   accounts: [],
   cashflow: [],
   categories: [],
+  transactions: [],
   lastUpdated: undefined,
   adviceHistory: [],
 };
@@ -63,6 +75,7 @@ const reducer = (state: FinancialState, action: FinancialAction): FinancialState
         accounts: action.payload.accounts,
         cashflow: action.payload.cashflow,
         categories: action.payload.categories,
+        transactions: action.payload.transactions || [],
         lastUpdated: action.payload.lastUpdated,
       };
     case 'ASK_QUESTION':
@@ -96,37 +109,7 @@ const reducer = (state: FinancialState, action: FinancialAction): FinancialState
   }
 };
 
-const generateMockSummary = (): Omit<FinancialState, 'adviceHistory'> => {
-  const today = dayjs();
-  const months = Array.from({ length: 6 }).map((_, index) => {
-    const month = today.subtract(index, 'month');
-    const inflows = 5000 + Math.round(Math.random() * 700);
-    const outflows = 3200 + Math.round(Math.random() * 600);
-    return {
-      month: month.format('MMM YYYY'),
-      inflows,
-      outflows,
-      net: inflows - outflows,
-    };
-  });
-
-  return {
-    accounts: [
-      { accountId: 'acct-checking', name: 'Everyday Checking', type: 'Checking', balance: 12500, currency: 'USD' },
-      { accountId: 'acct-brokerage', name: 'Growth Brokerage', type: 'Brokerage', balance: 45800, currency: 'USD' },
-      { accountId: 'acct-ira', name: 'Retirement IRA', type: 'Retirement', balance: 98200, currency: 'USD' },
-    ],
-    cashflow: months.reverse(),
-    categories: [
-      { category: 'Housing', amount: 1600 },
-      { category: 'Transportation', amount: 450 },
-      { category: 'Food & Dining', amount: 780 },
-      { category: 'Insurance', amount: 310 },
-      { category: 'Investments', amount: 1200 },
-    ],
-    lastUpdated: today.toISOString(),
-  };
-};
+// Removed mock data generation - now using real data from backend
 
 interface FinancialContextShape {
   state: FinancialState;
@@ -152,6 +135,7 @@ const mapSummaryToState = (summary: any): Omit<FinancialState, 'adviceHistory'> 
   accounts: Array.isArray(summary?.accounts) ? summary.accounts : [],
   cashflow: Array.isArray(summary?.cashflow) ? summary.cashflow : [],
   categories: Array.isArray(summary?.categories) ? summary.categories : [],
+  transactions: Array.isArray(summary?.transactions) ? summary.transactions : [],
   lastUpdated: summary?.lastUpdated ?? new Date().toISOString(),
 });
 
@@ -165,14 +149,15 @@ export const FinancialDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const response = await fetch(`${API_BASE_URL}/api/financial-state?userId=${encodeURIComponent(DEMO_USER_ID)}`);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch financial summary');
+        setLoading(false);
+        return;
       }
 
       const summary = await response.json();
       dispatch({ type: 'SET_DATA', payload: mapSummaryToState(summary) });
     } catch (error) {
-      console.warn('Falling back to mock data:', error);
-      dispatch({ type: 'SET_DATA', payload: generateMockSummary() });
+      console.error('Failed to load financial state:', error);
+      // No data loaded - user needs to connect Plaid
     } finally {
       setLoading(false);
     }
@@ -184,13 +169,12 @@ export const FinancialDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const ingestPdf = useCallback(
     async (file: File) => {
-      // Placeholder for a future backend upload endpoint.
+      // PDF ingestion not yet implemented - please use Plaid
       await new Promise((resolve) => setTimeout(resolve, 600));
-      dispatch({ type: 'SET_DATA', payload: generateMockSummary() });
       dispatch({
         type: 'RECEIVE_ADVICE',
         payload: {
-          reply: `Successfully ingested ${file.name}. Balances and dashboards have been refreshed.`,
+          reply: `PDF ingestion is not yet implemented. Please use "Connect with Plaid" to link your bank accounts and import real transaction data.`,
         },
       });
     },

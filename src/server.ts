@@ -88,10 +88,21 @@ const buildFinancialSummary = async (userId: string) => {
     }))
     .sort((a, b) => b.amount - a.amount);
 
+  const recentTransactions = transactions.slice(-100); // Last 100 transactions
+
   return {
     accounts: snapshots,
     cashflow,
     categories,
+    transactions: recentTransactions.map((txn) => ({
+      id: txn.id,
+      accountId: txn.accountId,
+      postedDate: txn.postedDate,
+      description: txn.description,
+      amount: txn.amount,
+      currency: txn.currency,
+      category: txn.category,
+    })),
     lastUpdated: new Date().toISOString(),
   };
 };
