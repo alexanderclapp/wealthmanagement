@@ -9,14 +9,11 @@ const UploadPage = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [plaidError, setPlaidError] = useState<string | null>(null);
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
-  const handleUpload = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const file = formData.get('statement') as File | null;
-
-    if (!file) {
-      setMessage('Please select a PDF statement to ingest.');
+  const handleFileUpload = async (file: File) => {
+    if (!file.type.includes('pdf')) {
+      setMessage('Please upload a PDF file.');
       return;
     }
 
@@ -25,12 +22,37 @@ const UploadPage = () => {
     try {
       await ingestPdf(file);
       setMessage('Statement ingested successfully. Navigate to Insights to review the updated dashboard.');
-      event.currentTarget.reset();
     } catch (error) {
       console.error(error);
       setMessage('Upload failed. Please try again.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFileUpload(e.target.files[0]);
     }
   };
 
@@ -57,15 +79,41 @@ const UploadPage = () => {
         dashboards and advice assistant.
       </p>
 
-      <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <label>
-          <strong>Upload PDF statement</strong>
-          <input type="file" name="statement" accept="application/pdf" disabled={uploading} style={{ display: 'block', marginTop: 8 }} />
-        </label>
-        <button type="submit" disabled={uploading} style={buttonStyle}>
-          {uploading ? 'Uploading...' : 'Ingest PDF'}
-        </button>
-      </form>
+      <div>
+        <strong>Upload PDF statement</strong>
+        <div
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+          style={{
+            ...dropZoneStyle,
+            backgroundColor: dragActive ? '#eff6ff' : '#f9fafb',
+            borderColor: dragActive ? '#2563eb' : '#d1d5db',
+          }}
+        >
+          <input
+            type="file"
+            id="pdf-upload"
+            accept="application/pdf"
+            onChange={handleFileInput}
+            disabled={uploading}
+            style={{ display: 'none' }}
+          />
+          <label htmlFor="pdf-upload" style={{ cursor: uploading ? 'not-allowed' : 'pointer', width: '100%', textAlign: 'center' }}>
+            {uploading ? (
+              <p style={{ margin: 0, color: '#6b7280' }}>Uploading...</p>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600 }}>📄 Drop PDF here or click to browse</p>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: '#6b7280' }}>
+                  Drag and drop your bank statement PDF file here
+                </p>
+              </>
+            )}
+          </label>
+        </div>
+      </div>
 
       <div style={{ margin: '32px 0', borderTop: '1px solid #e5e7eb' }} />
 
@@ -130,6 +178,16 @@ const buttonStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: 'pointer',
   width: 'fit-content',
+};
+
+const dropZoneStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: '48px 24px',
+  border: '2px dashed #d1d5db',
+  borderRadius: 12,
+  textAlign: 'center',
+  transition: 'all 0.2s ease',
+  cursor: 'pointer',
 };
 
 export default UploadPage;
