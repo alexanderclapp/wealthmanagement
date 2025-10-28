@@ -3,7 +3,8 @@ import { ParsedStatementDTO, ParsedStatementSchema, ParsedTransactionDTO } from 
 import { StatementParserPort } from '../../../application/ports/StatementParserPort.js';
 
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+const pdfParseModule = require('pdf-parse');
+const pdfParse = pdfParseModule.default || pdfParseModule;
 
 export interface PdfStatementParserOptions {
   allowStructuredFallback?: boolean;
