@@ -3,8 +3,13 @@ import { ParsedStatementDTO, ParsedStatementSchema, ParsedTransactionDTO } from 
 import { StatementParserPort } from '../../../application/ports/StatementParserPort.js';
 
 const require = createRequire(import.meta.url);
-const pdfParseModule = require('pdf-parse');
-const pdfParse = pdfParseModule.PDFParse || pdfParseModule;
+// pdf-parse exports a class PDFParse with a constructor, we need to instantiate and call its getText method
+const PDFParseClass = require('pdf-parse').PDFParse;
+
+async function pdfParse(buffer: Buffer) {
+  const pdfParser = new PDFParseClass({ data: buffer });
+  return await pdfParser.getText();
+}
 
 export interface PdfStatementParserOptions {
   allowStructuredFallback?: boolean;
@@ -34,7 +39,7 @@ export class PdfStatementParser implements StatementParserPort {
     try {
       // Extract text from PDF
       const pdfData = await pdfParse(rawStatement);
-      const text = pdfData.text;
+      const text = pdfData.text || '';
 
       // Parse the PDF text, passing all options including metadata
       const parsedData = this.parseStatementText(text, {
