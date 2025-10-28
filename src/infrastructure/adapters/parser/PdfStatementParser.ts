@@ -4,7 +4,7 @@ import { StatementParserPort } from '../../../application/ports/StatementParserP
 
 const require = createRequire(import.meta.url);
 const pdfParseModule = require('pdf-parse');
-const pdfParse = pdfParseModule.default || pdfParseModule;
+const pdfParse = pdfParseModule.PDFParse || pdfParseModule;
 
 export interface PdfStatementParserOptions {
   allowStructuredFallback?: boolean;
