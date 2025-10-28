@@ -236,9 +236,33 @@ export const FinancialDataProvider: React.FC<{ children: React.ReactNode }> = ({
     async (prompt: string) => {
       dispatch({ type: 'ASK_QUESTION', payload: { question: prompt } });
 
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      const reply = buildAdviceReply(prompt, state);
-      dispatch({ type: 'RECEIVE_ADVICE', payload: { reply } });
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/advice/ask`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: DEMO_USER_ID,
+            question: prompt,
+          }),
+        });
+
+        if (!response.ok) {
+          const { error } = await response.json().catch(() => ({ error: 'Failed to get advice' }));
+          throw new Error(error ?? 'Failed to get advice');
+        }
+
+        const data = await response.json();
+        const reply = data.answer || buildAdviceReply(prompt, state);
+        
+        dispatch({ type: 'RECEIVE_ADVICE', payload: { reply } });
+      } catch (error) {
+        console.error('Error getting advice:', error);
+        // Fallback to local advice if API fails
+        const reply = buildAdviceReply(prompt, state);
+        dispatch({ type: 'RECEIVE_ADVICE', payload: { reply } });
+      }
     },
     [state],
   );

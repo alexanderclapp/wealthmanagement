@@ -278,6 +278,95 @@ app.post('/api/ingest', upload.single('statement'), async (req, res) => {
   }
 });
 
+app.post('/api/advice/ask', async (req, res) => {
+  try {
+    const userId = ensureUserId(req.body.userId);
+    const question = req.body.question as string;
+
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ error: 'Question is required' });
+    }
+
+    console.log(`🤔 User ${userId} asked: "${question}"`);
+
+    // Load user's financial context
+    const { accounts, transactions } = await container.storage.loadAdviceContext(userId);
+
+    // Calculate category breakdown
+    const categoryTotals = new Map<string, number>();
+    let totalExpenses = 0;
+    transactions
+      .filter((txn) => txn.amount < 0)
+      .forEach((txn) => {
+        const category = txn.category ?? 'Uncategorized';
+        const amount = Math.abs(txn.amount);
+        categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + amount);
+        totalExpenses += amount;
+      });
+
+    const categoryBreakdown = Array.from(categoryTotals.entries())
+      .map(([category, total]) => ({
+        category,
+        total: Math.round(total),
+        percentage: (total / totalExpenses) * 100,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    // Prepare context
+    const incomePerMonth = transactions
+      .filter((txn) => txn.amount > 0)
+      .reduce((sum, txn) => sum + txn.amount, 0) / Math.max(1, new Set(transactions.map(t => dayjs(t.postedDate).format('YYYY-MM'))).size);
+
+    const expensesPerMonth = Math.abs(
+      transactions
+        .filter((txn) => txn.amount < 0)
+        .reduce((sum, txn) => sum + txn.amount, 0) / Math.max(1, new Set(transactions.map(t => dayjs(t.postedDate).format('YYYY-MM'))).size)
+    );
+
+    const context = {
+      userId,
+      accounts: accounts.map((acc) => ({
+        accountId: acc.id,
+        balance: acc.balance,
+        currency: acc.currency,
+        type: acc.type,
+      })),
+      incomePerMonth: Math.round(incomePerMonth),
+      expensesPerMonth: Math.round(expensesPerMonth),
+      netWorth: accounts.reduce((total, acc) => total + acc.balance, 0),
+    };
+
+    const recentTransactions = transactions
+      .slice(-10)
+      .map((txn) => ({
+        date: dayjs(txn.postedDate).format('MMM D'),
+        description: txn.description,
+        amount: txn.amount,
+        category: txn.category,
+      }));
+
+    // Get LLM answer
+    const answer = await container.adviceEngine.answerQuestion({
+      question,
+      context,
+      categoryBreakdown,
+      recentTransactions,
+    });
+
+    console.log(`✅ Answer generated for ${userId}`);
+
+    res.json({
+      success: true,
+      answer,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to generate advice';
+    console.error('Advice generation error:', error);
+    res.status(500).json({ error: message });
+  }
+});
+
 app.get('/api/advice/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
