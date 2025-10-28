@@ -33,10 +33,15 @@ const UploadPage = () => {
   const fetchStatements = async () => {
     setLoadingStatements(true);
     try {
+      console.log('Fetching statements from:', `${API_BASE_URL}/api/statements?userId=${DEMO_USER_ID}`);
       const response = await fetch(`${API_BASE_URL}/api/statements?userId=${DEMO_USER_ID}`);
+      console.log('Response status:', response.status);
       if (response.ok) {
         const data = await response.json();
+        console.log('Statements data:', data);
         setStatements(data.statements || []);
+      } else {
+        console.error('Failed to fetch statements, status:', response.status);
       }
     } catch (error) {
       console.error('Failed to fetch statements:', error);
@@ -214,11 +219,18 @@ const UploadPage = () => {
         </div>
       )}
 
-      {statements.length > 0 && (
+      {(statements.length > 0 || loadingStatements) && (
         <div style={{ marginTop: 40 }}>
-          <h3 style={{ marginBottom: 16 }}>📂 Uploaded Statements ({statements.length})</h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
+          <h3 style={{ marginBottom: 16 }}>
+            📂 Uploaded Statements {loadingStatements ? '(Loading...)' : `(${statements.length})`}
+          </h3>
+          {loadingStatements && statements.length === 0 ? (
+            <p style={{ color: '#6b7280' }}>Loading your statements...</p>
+          ) : statements.length === 0 ? (
+            <p style={{ color: '#6b7280' }}>No statements uploaded yet.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
               <thead>
                 <tr>
                   <th>File Name</th>
@@ -278,6 +290,7 @@ const UploadPage = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
