@@ -24,6 +24,7 @@ This project provides a hexagonal (ports-and-adapters) TypeScript implementation
    PLAID_CLIENT_ID=your-plaid-client-id
    PLAID_SECRET=your-plaid-secret
    PLAID_ENVIRONMENT=sandbox
+   OPENROUTER_API_KEY=your-openrouter-key  # Optional: enables LLM-powered PDF parsing
    APP_BASE_CURRENCY=USD
    VITE_API_BASE_URL=http://localhost:4000
    ```
@@ -75,6 +76,23 @@ npm run web:preview
 
 The React context at `apps/web/src/context/FinancialDataContext.tsx` now calls the Express API for financial summaries, Plaid link token creation, and transaction sync. When the API is unreachable the UI falls back to locally-generated sample data.
 
+## PDF Ingestion with LLM
+
+The platform supports uploading PDF bank statements which are parsed using an LLM via OpenRouter for accurate transaction extraction.
+
+**How it works:**
+1. Upload a PDF statement through the web interface
+2. The backend extracts text from the PDF using `pdf-parse`
+3. Text is sent to an LLM (GPT-4o-mini via OpenRouter) to extract structured transaction data
+4. The LLM returns transactions with dates, descriptions, and amounts
+5. Data is validated and stored, then appears in the dashboard and transactions tab
+
+**Configuration:**
+- **Required**: `OPENROUTER_API_KEY` - Get your API key from [OpenRouter](https://openrouter.ai/)
+- **Fallback**: If no API key is provided, the system uses pattern matching (less accurate)
+
+**Supported models**: The current implementation uses `openai/gpt-4o-mini` for cost-effectiveness and speed. You can modify the model in `PdfStatementParser.ts`.
+
 ## Plaid Integration
 
 1. Obtain a Plaid **Client ID** and **Secret** (sandbox values work for development).
@@ -119,6 +137,7 @@ If Plaid credentials are missing, the server responds with HTTP 503 and the UI d
      PLAID_CLIENT_ID=your-client-id \
      PLAID_SECRET=your-secret \
      PLAID_ENVIRONMENT=production \
+     OPENROUTER_API_KEY=your-openrouter-key \
      APP_BASE_CURRENCY=USD
    ```
 4. Push the repository:

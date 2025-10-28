@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import OpenAI from 'openai';
 import { ParsedStatementDTO, ParsedStatementSchema, ParsedTransactionDTO } from '../../../application/dto/ParsedStatementDTO.js';
 import { StatementParserPort } from '../../../application/ports/StatementParserPort.js';
 
@@ -10,6 +11,13 @@ async function pdfParse(buffer: Buffer) {
   const pdfParser = new PDFParseClass({ data: buffer });
   return await pdfParser.getText();
 }
+
+const openRouterClient = process.env.OPENROUTER_API_KEY
+  ? new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: process.env.OPENROUTER_API_KEY,
+    })
+  : null;
 
 export interface PdfStatementParserOptions {
   allowStructuredFallback?: boolean;
@@ -36,18 +44,18 @@ export class PdfStatementParser implements StatementParserPort {
       }
     }
 
-    try {
-      // Extract text from PDF
-      const pdfData = await pdfParse(rawStatement);
-      const text = pdfData.text || '';
+      try {
+        // Extract text from PDF
+        const pdfData = await pdfParse(rawStatement);
+        const text = pdfData.text || '';
 
-      // Parse the PDF text, passing all options including metadata
-      const parsedData = this.parseStatementText(text, {
-        statementId: options.statementId,
-        accountIdHint: options.accountIdHint,
-        institutionId: options.institutionId,
-        metadata: options.metadata,
-      });
+        // Parse the PDF text, passing all options including metadata
+        const parsedData = await this.parseStatementText(text, {
+          statementId: options.statementId,
+          accountIdHint: options.accountIdHint,
+          institutionId: options.institutionId,
+          metadata: options.metadata,
+        });
 
       console.log('📄 PDF parsed:', {
         accountId: parsedData.account.accountId,
@@ -59,6 +67,7 @@ export class PdfStatementParser implements StatementParserPort {
         userId: parsedData.metadata?.userId,
         textLength: text.length,
         linesExtracted: parsedData.metadata?.extractedLines,
+        firstFewLines: text.split('\n').slice(0, 20).join('\n'),
       });
 
       return parsedData;
@@ -69,7 +78,7 @@ export class PdfStatementParser implements StatementParserPort {
     }
   }
 
-  private parseStatementText(
+  private async parseStatementText(
     text: string,
     options: {
       statementId: string;
@@ -77,7 +86,7 @@ export class PdfStatementParser implements StatementParserPort {
       institutionId?: string;
       metadata?: Record<string, unknown>;
     },
-  ): ParsedStatementDTO {
+  ): Promise<ParsedStatementDTO> {
     const lines = text.split('\n').map((line) => line.trim());
 
     // Extract account information
@@ -89,8 +98,8 @@ export class PdfStatementParser implements StatementParserPort {
     // Extract balances
     const { openingBalance, closingBalance } = this.extractBalances(lines);
 
-    // Extract transactions
-    const transactions = this.extractTransactions(lines, accountInfo.accountId);
+    // Extract transactions using LLM (with fallback to patterns)
+    const transactions = await this.extractTransactionsWithLLM(text, accountInfo.accountId);
 
     // Infer currency (default to USD if not found)
     const currency = accountInfo.currency || 'USD';
@@ -225,49 +234,152 @@ export class PdfStatementParser implements StatementParserPort {
     return { openingBalance, closingBalance };
   }
 
-  private extractTransactions(lines: string[], accountId: string): ParsedTransactionDTO[] {
+  private async extractTransactionsWithLLM(text: string, accountId: string): Promise<ParsedTransactionDTO[]> {
+    if (!openRouterClient) {
+      console.log('⚠️ OpenRouter API key not configured, falling back to pattern matching');
+      return this.extractTransactionsWithPatterns(text.split('\n'), accountId);
+    }
+
+    try {
+      console.log('🤖 Using LLM to extract transactions from PDF text');
+
+      const prompt = `You are a financial data extraction expert. Extract all transactions from this bank statement text.
+
+Return ONLY a valid JSON array of transactions with this exact structure:
+[
+  {
+    "date": "YYYY-MM-DD",
+    "description": "transaction description",
+    "amount": -45.67,
+    "balance": 1234.56
+  }
+]
+
+Rules:
+- Use negative amounts for debits/withdrawals/purchases
+- Use positive amounts for credits/deposits/payments received
+- Parse dates to YYYY-MM-DD format
+- Include balance if shown, otherwise omit
+- Return empty array [] if no transactions found
+- Return ONLY the JSON array, no other text
+
+Bank statement text:
+${text.slice(0, 15000)}`;
+
+      const response = await openRouterClient.chat.completions.create({
+        model: 'openai/gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        console.log('❌ No response from LLM');
+        return this.extractTransactionsWithPatterns(text.split('\n'), accountId);
+      }
+
+      // Extract JSON from response (in case LLM added extra text)
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        console.log('❌ No JSON array found in LLM response');
+        return this.extractTransactionsWithPatterns(text.split('\n'), accountId);
+      }
+
+      const llmTransactions = JSON.parse(jsonMatch[0]);
+      console.log(`✅ LLM extracted ${llmTransactions.length} transactions`);
+
+      return llmTransactions.map((txn: any) => ({
+        accountId,
+        postedDate: txn.date,
+        description: txn.description,
+        amount: txn.amount,
+        currency: 'USD',
+        type: txn.amount >= 0 ? ('CREDIT' as const) : ('DEBIT' as const),
+        balanceAfter: txn.balance,
+        metadata: {
+          extractedByLLM: true,
+        },
+      }));
+    } catch (error) {
+      console.error('❌ LLM extraction failed:', error);
+      return this.extractTransactionsWithPatterns(text.split('\n'), accountId);
+    }
+  }
+
+  private extractTransactionsWithPatterns(lines: string[], accountId: string): ParsedTransactionDTO[] {
     const transactions: ParsedTransactionDTO[] = [];
 
-    // Common transaction line patterns:
-    // "01/15/2024  AMAZON.COM  -45.67  1,234.56"
-    // "01/15  STARBUCKS  45.67"
-    // "15 Jan  PAYROLL DEPOSIT  +2,500.00"
+    // Try multiple patterns for different bank statement formats
+    const patterns = [
+      // Pattern 1: "01/15/2024  AMAZON.COM  -45.67  1,234.56"
+      /(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+([-+]?\$?\s*[\d,]+\.?\d{2})\s*(\$?\s*[\d,]+\.?\d{2})?$/,
+      // Pattern 2: More flexible with optional balance
+      /^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.{3,50}?)\s+([-+]?\$?\s*[\d,]+\.?\d{0,2})$/,
+      // Pattern 3: Date at start, description, then amount
+      /^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+([-+]?\(?\$?\s*[\d,]+\.?\d{0,2}\)?)\s*$/,
+    ];
 
-    const transactionPattern =
-      /(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+([-+]?\$?\s*[\d,]+\.?\d*)\s*(\$?\s*[\d,]+\.?\d*)?$/;
+    console.log(`🔍 Attempting to extract transactions from ${lines.length} lines`);
+    let attemptedMatches = 0;
 
     for (const line of lines) {
-      const match = line.match(transactionPattern);
-      if (match) {
-        const [, dateStr, description, amountStr, balanceStr] = match;
+      const trimmedLine = line.trim();
+      if (trimmedLine.length < 10) continue; // Skip very short lines
 
-        // Skip if description looks like a header
-        if (
-          description.match(/date|description|amount|balance|transaction/i) ||
-          description.length < 3
-        ) {
-          continue;
+      for (const pattern of patterns) {
+        const match = trimmedLine.match(pattern);
+        if (match) {
+          attemptedMatches++;
+          const dateStr = match[1];
+          const description = match[2]?.trim();
+          const amountStr = match[3];
+          const balanceStr = match[4];
+
+          // Skip if description looks like a header or is too short
+          if (
+            !description ||
+            description.length < 3 ||
+            description.match(/^(date|description|amount|balance|transaction|posting|reference)$/i)
+          ) {
+            continue;
+          }
+
+          try {
+            const postedDate = this.normalizeDate(dateStr);
+            const amount = this.parseAmount(amountStr);
+            
+            // Skip if amount is 0 or invalid
+            if (isNaN(amount) || amount === 0) {
+              continue;
+            }
+
+            const balanceAfter = balanceStr ? this.parseAmount(balanceStr) : undefined;
+
+            transactions.push({
+              accountId,
+              postedDate,
+              description: description.trim(),
+              amount,
+              currency: 'USD',
+              type: amount >= 0 ? ('CREDIT' as const) : ('DEBIT' as const),
+              balanceAfter,
+              metadata: {
+                extractedFromLine: true,
+                rawLine: line,
+              },
+            });
+
+            break; // Found a match, don't try other patterns for this line
+          } catch (error) {
+            // Failed to parse this line, continue
+            continue;
+          }
         }
-
-        const postedDate = this.normalizeDate(dateStr);
-        const amount = this.parseAmount(amountStr);
-        const balanceAfter = balanceStr ? this.parseAmount(balanceStr) : undefined;
-
-        transactions.push({
-          accountId,
-          postedDate,
-          description: description.trim(),
-          amount,
-          currency: 'USD',
-          type: amount >= 0 ? ('CREDIT' as const) : ('DEBIT' as const),
-          balanceAfter,
-          metadata: {
-            extractedFromLine: true,
-          },
-        });
       }
     }
 
+    console.log(`✅ Extracted ${transactions.length} transactions from ${attemptedMatches} potential matches`);
+    
     return transactions;
   }
 
