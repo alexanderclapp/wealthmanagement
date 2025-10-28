@@ -111,10 +111,18 @@ const reducer = (state: FinancialState, action: FinancialAction): FinancialState
 
 // Removed mock data generation - now using real data from backend
 
+interface IngestResult {
+  success: boolean;
+  statementId: string;
+  verificationStatus: string;
+  transactionsProcessed: number;
+  summary: any;
+}
+
 interface FinancialContextShape {
   state: FinancialState;
   loading: boolean;
-  ingestPdf: (file: File) => Promise<void>;
+  ingestPdf: (file: File) => Promise<IngestResult>;
   requestLinkToken: () => Promise<string>;
   completePlaidLink: (publicToken: string) => Promise<void>;
   refresh: () => Promise<void>;
@@ -124,7 +132,7 @@ interface FinancialContextShape {
 const FinancialDataContext = createContext<FinancialContextShape>({
   state: initialState,
   loading: false,
-  ingestPdf: async () => {},
+  ingestPdf: async () => ({ success: false, statementId: '', verificationStatus: '', transactionsProcessed: 0, summary: {} }),
   requestLinkToken: async () => '',
   completePlaidLink: async () => {},
   refresh: async () => {},
@@ -167,19 +175,30 @@ export const FinancialDataProvider: React.FC<{ children: React.ReactNode }> = ({
     void refresh();
   }, [refresh]);
 
-  const ingestPdf = useCallback(
-    async (file: File) => {
-      // PDF ingestion not yet implemented - please use Plaid
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      dispatch({
-        type: 'RECEIVE_ADVICE',
-        payload: {
-          reply: `PDF ingestion is not yet implemented. Please use "Connect with Plaid" to link your bank accounts and import real transaction data.`,
-        },
-      });
-    },
-    [],
-  );
+  const ingestPdf = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append('statement', file);
+    formData.append('userId', DEMO_USER_ID);
+
+    const response = await fetch(`${API_BASE_URL}/api/ingest`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: 'Failed to upload PDF' }));
+      throw new Error(error ?? 'Failed to upload PDF');
+    }
+
+    const data = await response.json();
+    
+    // Update state with the new summary
+    if (data.summary) {
+      dispatch({ type: 'SET_DATA', payload: mapSummaryToState(data.summary) });
+    }
+
+    return data;
+  }, []);
 
   const requestLinkToken = useCallback(async (): Promise<string> => {
     const response = await fetch(`${API_BASE_URL}/api/plaid/link-token`, {

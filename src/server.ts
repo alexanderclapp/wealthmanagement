@@ -1,6 +1,7 @@
 import cors from 'cors';
 import dayjs from 'dayjs';
 import express from 'express';
+import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppContainer } from './infrastructure/bootstrap/AppContainer.js';
@@ -12,6 +13,21 @@ const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const container = new AppContainer();
 const userAccessTokens = new Map<string, string>();
+
+// Configure multer for file uploads (store in memory)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
+    }
+  },
+});
 
 app.use(cors({ origin: '*', credentials: false }));
 app.use(express.json({ limit: '2mb' }));
@@ -205,34 +221,59 @@ app.get('/api/financial-state', async (req, res) => {
   }
 });
 
-app.post('/api/ingest', async (req, res) => {
+app.post('/api/ingest', upload.single('statement'), async (req, res) => {
   try {
-    const { statementId, structuredData, baseCurrency } = req.body;
+    const userId = ensureUserId(req.body.userId);
 
-    if (!statementId || !structuredData) {
+    if (!req.file) {
       return res.status(400).json({
-        error: 'Missing required fields: statementId, structuredData',
+        error: 'No PDF file provided. Please upload a statement.',
       });
     }
 
+    const statementId = `stmt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
     const ingestionResult = await container.ingestionService.ingestStatement({
       statementId,
-      rawStatement: Buffer.from('mock-pdf'),
+      rawStatement: req.file.buffer,
       parserOptions: {
+        accountIdHint: req.body.accountIdHint,
+        institutionId: req.body.institutionId,
         metadata: {
-          structuredData,
+          userId,
+          fileName: req.file.originalname,
+          uploadedAt: new Date().toISOString(),
         },
       },
-      baseCurrency: baseCurrency || container.config.app.baseCurrency,
+      baseCurrency: req.body.baseCurrency || container.config.app.baseCurrency,
+    });
+
+    console.log('✅ PDF ingested successfully:', {
+      userId,
+      accountId: ingestionResult.statement.account.id,
+      accountMetadata: ingestionResult.statement.account.metadata,
+      transactionsProcessed: ingestionResult.statement.transactions.length,
+    });
+
+    // Return updated financial summary
+    const summary = await buildFinancialSummary(userId);
+
+    console.log('📊 Summary generated:', {
+      userId,
+      accounts: summary.accounts.length,
+      transactions: summary.transactions.length,
     });
 
     res.json({
+      success: true,
       statementId,
       verificationStatus: ingestionResult.verificationStatus,
       transactionsProcessed: ingestionResult.statement.transactions.length,
+      summary,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to ingest statement';
+    console.error('PDF ingestion error:', error);
     res.status(500).json({ error: message });
   }
 });

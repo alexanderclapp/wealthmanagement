@@ -20,11 +20,15 @@ const UploadPage = () => {
     setUploading(true);
     setMessage(null);
     try {
-      await ingestPdf(file);
-      setMessage('Statement ingested successfully. Navigate to Insights to review the updated dashboard.');
+      const result = await ingestPdf(file);
+      const transactionCount = result?.transactionsProcessed ?? 0;
+      setMessage(
+        `Statement ingested successfully! Processed ${transactionCount} transaction${transactionCount !== 1 ? 's' : ''}. Navigate to Insights to review the updated dashboard.`
+      );
     } catch (error) {
       console.error(error);
-      setMessage('Upload failed. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
+      setMessage(errorMessage);
     } finally {
       setUploading(false);
     }

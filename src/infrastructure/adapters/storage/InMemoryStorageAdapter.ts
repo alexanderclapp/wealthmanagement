@@ -53,9 +53,19 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   async loadAdviceContext(userId: string): Promise<{ accounts: Account[]; transactions: Transaction[] }> {
     // In-memory adapter stores no tenancy; real implementations should filter by userId.
-    const accounts = Array.from(this.accounts.values()).filter((account) => account.metadata?.userId === userId);
+    const allAccounts = Array.from(this.accounts.values());
+    const accounts = allAccounts.filter((account) => account.metadata?.userId === userId);
     const accountIds = new Set(accounts.map((account) => account.id));
     const transactions = Array.from(this.transactions.values()).filter((txn) => accountIds.has(txn.accountId));
+
+    console.log('🔍 loadAdviceContext:', {
+      userId,
+      totalAccountsInStore: allAccounts.length,
+      filteredAccounts: accounts.length,
+      totalTransactionsInStore: this.transactions.size,
+      filteredTransactions: transactions.length,
+      accountsMetadata: allAccounts.map(a => ({ id: a.id, userId: a.metadata?.userId })),
+    });
 
     return { accounts, transactions };
   }

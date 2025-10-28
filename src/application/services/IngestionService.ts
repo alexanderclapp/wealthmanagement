@@ -78,7 +78,10 @@ export class IngestionService {
       currency: parsed.account.currency,
       balance: parsed.closingBalance,
       asOf: parsed.period.end,
-      metadata: parsed.metadata,
+      metadata: {
+        ...parsed.metadata,
+        userId: parsed.metadata?.userId, // Preserve userId for filtering
+      },
     };
   }
 
