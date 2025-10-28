@@ -249,17 +249,42 @@ export class PdfStatementParser implements StatementParserPort {
       const relevantText = this.extractRelevantTransactionText(text);
       console.log(`📝 Sending ${relevantText.length} chars to LLM (reduced from ${text.length})`);
 
-      const prompt = `Extract all transactions from this bank statement. Return ONLY a JSON array, no explanation.
+      const prompt = `Extract ALL transactions from this bank statement. Return ONLY a JSON array, no explanation.
 
 Format: [{"date":"YYYY-MM-DD","description":"text","amount":-45.67}]
 
-CRITICAL RULES for amount sign:
-- If transaction is in "Money out", "Debit", "Withdrawal", "Purchase" column → NEGATIVE amount (e.g., -87.00)
-- If transaction is in "Money in", "Credit", "Deposit", "Payment received" column → POSITIVE amount (e.g., 4768.00)
-- If only one amount column: negative for expenses/purchases, positive for income/deposits/transfers in
-- Parse dates to YYYY-MM-DD format
-- Keep description concise (main merchant/transaction name)
-- Return [] if no transactions found
+CRITICAL RULES for determining amount sign:
+1. Look at which COLUMN the amount appears in:
+   - "Money out" / "Debit" / "Withdrawal" column → NEGATIVE (e.g., -87.00)
+   - "Money in" / "Credit" / "Deposit" / "Payment received" column → POSITIVE (e.g., 4768.00)
+
+2. Common patterns:
+   - Purchases, payments, fees → NEGATIVE
+   - Transfers received, deposits, refunds, income → POSITIVE
+   - If description says "Transfer from", "Deposit", "Payment received" → POSITIVE
+   - If description says "Transfer to", "Payment to" → NEGATIVE
+
+3. For Revolut/multi-column statements:
+   - Check if amount is in left column (usually Money out = negative) or right column (usually Money in = positive)
+   - A transaction with amount ONLY in "Money in" column must be positive
+   - A transaction with amount ONLY in "Money out" column must be negative
+
+EXAMPLE:
+If you see:
+  Date | Description              | Money out | Money in
+  1/5  | Casamorrill              | $87.00    |
+  1/6  | Transfer from user       |           | $4,768.00
+
+Output:
+[
+  {"date":"2025-01-05","description":"Casamorrill","amount":-87.00},
+  {"date":"2025-01-06","description":"Transfer from user","amount":4768.00}
+]
+
+4. Parse dates to YYYY-MM-DD format
+5. Keep description concise (main merchant/transaction name)
+6. Extract ALL transactions, including both inflows and outflows
+7. Return [] if no transactions found
 
 Statement:
 ${relevantText}`;
