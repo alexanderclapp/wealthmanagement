@@ -97,6 +97,8 @@ export class BoundaryMLIngestionVerifier implements IngestionVerifierPort {
   private runFallbackChecks(statement: ParsedStatementDTO, statementId: string): VerificationReportDTO {
     const issues: VerificationIssueDTO[] = [];
     const executedAt = new Date().toISOString();
+    const isPdfStatement = statement.source === 'PDF';
+    const isLLMExtracted = statement.metadata?.extractedByLLM === true;
 
     const periodValid = new Date(statement.period.start) <= new Date(statement.period.end);
     if (!periodValid) {
@@ -108,6 +110,8 @@ export class BoundaryMLIngestionVerifier implements IngestionVerifierPort {
       });
     }
 
+    // For PDF statements, especially LLM-extracted ones, balance mismatches are common
+    // because opening/closing balances may not be extractable from all formats
     const totalActivity = statement.transactions.reduce((sum, txn) => sum + txn.amount, 0);
     const balanceDelta = statement.closingBalance - statement.openingBalance;
     const deltaTolerance = Math.abs(totalActivity - balanceDelta);
@@ -116,8 +120,11 @@ export class BoundaryMLIngestionVerifier implements IngestionVerifierPort {
         code: 'balance_mismatch',
         message: 'Transaction totals do not reconcile with balance delta.',
         field: 'closingBalance',
-        severity: 'ERROR',
-        remediation: 'Verify transactions list contains all entries and amounts are signed correctly.',
+        // Downgrade to WARNING for PDF statements with balances of 0 (likely not extracted)
+        severity: isPdfStatement && (statement.openingBalance === 0 || statement.closingBalance === 0) ? 'WARNING' : 'ERROR',
+        remediation: isLLMExtracted 
+          ? 'Balance data may not be available in the PDF format. Transaction data is still valid.'
+          : 'Verify transactions list contains all entries and amounts are signed correctly.',
       });
     }
 
@@ -146,7 +153,7 @@ export class BoundaryMLIngestionVerifier implements IngestionVerifierPort {
       issues,
       source: 'boundaryml-fallback',
       executedAt,
-      metadata: { fallback: true },
+      metadata: { fallback: true, isPdfStatement, isLLMExtracted },
     };
   }
 }

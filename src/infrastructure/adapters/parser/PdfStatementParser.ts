@@ -16,6 +16,8 @@ const openRouterClient = process.env.OPENROUTER_API_KEY
   ? new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
       apiKey: process.env.OPENROUTER_API_KEY,
+      timeout: 25000, // 25 second timeout (Heroku has 30s limit)
+      maxRetries: 0, // Don't retry, fail fast
     })
   : null;
 
@@ -242,34 +244,29 @@ export class PdfStatementParser implements StatementParserPort {
 
     try {
       console.log('🤖 Using LLM to extract transactions from PDF text');
+      
+      // Smart text extraction: focus on transaction sections, remove headers/footers
+      const relevantText = this.extractRelevantTransactionText(text);
+      console.log(`📝 Sending ${relevantText.length} chars to LLM (reduced from ${text.length})`);
 
-      const prompt = `You are a financial data extraction expert. Extract all transactions from this bank statement text.
+      const prompt = `Extract all transactions from this bank statement. Return ONLY a JSON array, no explanation.
 
-Return ONLY a valid JSON array of transactions with this exact structure:
-[
-  {
-    "date": "YYYY-MM-DD",
-    "description": "transaction description",
-    "amount": -45.67,
-    "balance": 1234.56
-  }
-]
+Format: [{"date":"YYYY-MM-DD","description":"text","amount":-45.67}]
 
 Rules:
-- Use negative amounts for debits/withdrawals/purchases
-- Use positive amounts for credits/deposits/payments received
-- Parse dates to YYYY-MM-DD format
-- Include balance if shown, otherwise omit
-- Return empty array [] if no transactions found
-- Return ONLY the JSON array, no other text
+- Negative for debits/purchases, positive for credits/deposits
+- Parse dates to YYYY-MM-DD
+- Omit balance field
+- Return [] if no transactions
 
-Bank statement text:
-${text.slice(0, 15000)}`;
+Statement:
+${relevantText}`;
 
       const response = await openRouterClient.chat.completions.create({
         model: 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0,
+        max_tokens: 4000, // Limit response size
       });
 
       const content = response.choices[0]?.message?.content;
@@ -304,6 +301,58 @@ ${text.slice(0, 15000)}`;
       console.error('❌ LLM extraction failed:', error);
       return this.extractTransactionsWithPatterns(text.split('\n'), accountId);
     }
+  }
+
+  private extractRelevantTransactionText(text: string): string {
+    const lines = text.split('\n');
+    
+    // Find where transactions start (common patterns)
+    const transactionStartPatterns = [
+      /transaction/i,
+      /posted.*date.*description.*amount/i,
+      /date.*description.*debit.*credit/i,
+      /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}.*\$?\d+\.\d{2}/,
+    ];
+    
+    let startIdx = 0;
+    for (let i = 0; i < Math.min(lines.length, 50); i++) {
+      if (transactionStartPatterns.some(pattern => pattern.test(lines[i]))) {
+        startIdx = i;
+        break;
+      }
+    }
+    
+    // Find where transactions end (common patterns)
+    const transactionEndPatterns = [
+      /total\s+(?:debits|credits|transactions)/i,
+      /closing\s+balance/i,
+      /page\s+\d+\s+of\s+\d+/i,
+      /^\s*$/,
+    ];
+    
+    let endIdx = lines.length;
+    let consecutiveEmptyLines = 0;
+    for (let i = Math.max(startIdx + 10, 0); i < lines.length; i++) {
+      if (lines[i].trim() === '') {
+        consecutiveEmptyLines++;
+        if (consecutiveEmptyLines > 5) {
+          endIdx = i - 5;
+          break;
+        }
+      } else {
+        consecutiveEmptyLines = 0;
+      }
+      
+      if (transactionEndPatterns.some(pattern => pattern.test(lines[i]))) {
+        endIdx = i;
+        break;
+      }
+    }
+    
+    // Extract transaction section + limit to 12000 chars for speed
+    const relevantLines = lines.slice(startIdx, endIdx);
+    const relevantText = relevantLines.join('\n');
+    return relevantText.slice(0, 12000);
   }
 
   private extractTransactionsWithPatterns(lines: string[], accountId: string): ParsedTransactionDTO[] {
