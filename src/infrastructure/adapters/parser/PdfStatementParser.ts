@@ -1,6 +1,9 @@
-import pdfParse from 'pdf-parse';
+import { createRequire } from 'node:module';
 import { ParsedStatementDTO, ParsedStatementSchema, ParsedTransactionDTO } from '../../../application/dto/ParsedStatementDTO.js';
 import { StatementParserPort } from '../../../application/ports/StatementParserPort.js';
+
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 export interface PdfStatementParserOptions {
   allowStructuredFallback?: boolean;
@@ -29,7 +32,6 @@ export class PdfStatementParser implements StatementParserPort {
 
     try {
       // Extract text from PDF
-      // @ts-ignore - pdf-parse has incorrect type definitions
       const pdfData = await pdfParse(rawStatement);
       const text = pdfData.text;
 
