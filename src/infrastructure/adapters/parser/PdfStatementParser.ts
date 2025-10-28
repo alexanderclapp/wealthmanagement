@@ -266,7 +266,7 @@ ${relevantText}`;
         model: 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0,
-        max_tokens: 4000, // Limit response size
+        max_tokens: 8000, // Increased to handle more transactions
       });
 
       const content = response.choices[0]?.message?.content;
@@ -304,55 +304,31 @@ ${relevantText}`;
   }
 
   private extractRelevantTransactionText(text: string): string {
+    // Remove excessive headers/footers but keep all transaction data
     const lines = text.split('\n');
     
-    // Find where transactions start (common patterns)
+    // Find where transactions start (look for first date pattern or "transaction" keyword)
     const transactionStartPatterns = [
+      /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/,  // Any date pattern
       /transaction/i,
-      /posted.*date.*description.*amount/i,
-      /date.*description.*debit.*credit/i,
-      /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}.*\$?\d+\.\d{2}/,
     ];
     
     let startIdx = 0;
-    for (let i = 0; i < Math.min(lines.length, 50); i++) {
+    for (let i = 0; i < Math.min(lines.length, 100); i++) {
       if (transactionStartPatterns.some(pattern => pattern.test(lines[i]))) {
-        startIdx = i;
+        // Start a few lines before to include headers
+        startIdx = Math.max(0, i - 5);
         break;
       }
     }
     
-    // Find where transactions end (common patterns)
-    const transactionEndPatterns = [
-      /total\s+(?:debits|credits|transactions)/i,
-      /closing\s+balance/i,
-      /page\s+\d+\s+of\s+\d+/i,
-      /^\s*$/,
-    ];
-    
-    let endIdx = lines.length;
-    let consecutiveEmptyLines = 0;
-    for (let i = Math.max(startIdx + 10, 0); i < lines.length; i++) {
-      if (lines[i].trim() === '') {
-        consecutiveEmptyLines++;
-        if (consecutiveEmptyLines > 5) {
-          endIdx = i - 5;
-          break;
-        }
-      } else {
-        consecutiveEmptyLines = 0;
-      }
-      
-      if (transactionEndPatterns.some(pattern => pattern.test(lines[i]))) {
-        endIdx = i;
-        break;
-      }
-    }
-    
-    // Extract transaction section + limit to 12000 chars for speed
-    const relevantLines = lines.slice(startIdx, endIdx);
+    // Don't try to find the end - just take everything from start onwards
+    // This ensures we don't cut off multi-page statements
+    const relevantLines = lines.slice(startIdx);
     const relevantText = relevantLines.join('\n');
-    return relevantText.slice(0, 12000);
+    
+    // Use a larger limit to capture all transactions - 20k chars should handle most statements
+    return relevantText.slice(0, 20000);
   }
 
   private extractTransactionsWithPatterns(lines: string[], accountId: string): ParsedTransactionDTO[] {
