@@ -253,11 +253,13 @@ export class PdfStatementParser implements StatementParserPort {
 
 Format: [{"date":"YYYY-MM-DD","description":"text","amount":-45.67}]
 
-Rules:
-- Negative for debits/purchases, positive for credits/deposits
-- Parse dates to YYYY-MM-DD
-- Omit balance field
-- Return [] if no transactions
+CRITICAL RULES for amount sign:
+- If transaction is in "Money out", "Debit", "Withdrawal", "Purchase" column → NEGATIVE amount (e.g., -87.00)
+- If transaction is in "Money in", "Credit", "Deposit", "Payment received" column → POSITIVE amount (e.g., 4768.00)
+- If only one amount column: negative for expenses/purchases, positive for income/deposits/transfers in
+- Parse dates to YYYY-MM-DD format
+- Keep description concise (main merchant/transaction name)
+- Return [] if no transactions found
 
 Statement:
 ${relevantText}`;
