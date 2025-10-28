@@ -75,4 +75,51 @@ export class InMemoryStorageAdapter implements StoragePort {
       this.advice.set(recommendation.id, recommendation);
     }
   }
+
+  async listStatements(userId: string): Promise<Statement[]> {
+    // Filter statements by userId stored in metadata
+    const allStatements = Array.from(this.statements.values());
+    return allStatements
+      .filter((statement) => statement.metadata?.userId === userId)
+      .sort((a, b) => new Date(b.ingestedAt).getTime() - new Date(a.ingestedAt).getTime());
+  }
+
+  async deleteStatement(statementId: string): Promise<void> {
+    const statement = this.statements.get(statementId);
+    if (!statement) {
+      return;
+    }
+
+    // Delete the statement
+    this.statements.delete(statementId);
+
+    // Delete all transactions from this statement's account
+    const accountId = statement.account.id;
+    const transactionsToDelete: string[] = [];
+    
+    for (const [hash, txn] of this.transactions.entries()) {
+      if (txn.accountId === accountId) {
+        transactionsToDelete.push(hash);
+      }
+    }
+
+    for (const hash of transactionsToDelete) {
+      this.transactions.delete(hash);
+    }
+
+    // Check if this was the only statement for this account
+    const otherStatementsForAccount = Array.from(this.statements.values()).some(
+      (stmt) => stmt.account.id === accountId
+    );
+
+    // If no other statements reference this account, delete the account
+    if (!otherStatementsForAccount) {
+      this.accounts.delete(accountId);
+    }
+
+    // Delete verification report if exists
+    this.verifications.delete(statementId);
+
+    console.log(`🗑️ Deleted statement ${statementId} and ${transactionsToDelete.length} transactions`);
+  }
 }

@@ -14,4 +14,6 @@ export interface StoragePort {
   loadTransactions(accountId: string, params: { startDate?: string; endDate?: string }): Promise<Transaction[]>;
   loadAdviceContext(userId: string): Promise<{ accounts: Account[]; transactions: Transaction[] }>;
   saveAdviceRecommendations(advice: AdviceRecommendation[]): Promise<void>;
+  listStatements(userId: string): Promise<Statement[]>;
+  deleteStatement(statementId: string): Promise<void>;
 }

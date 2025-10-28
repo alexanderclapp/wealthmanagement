@@ -278,6 +278,60 @@ app.post('/api/ingest', upload.single('statement'), async (req, res) => {
   }
 });
 
+app.get('/api/statements', async (req, res) => {
+  try {
+    const userId = ensureUserId(req.query.userId as string);
+    const statements = await container.storage.listStatements(userId);
+
+    res.json({
+      statements: statements.map((stmt) => ({
+        id: stmt.id,
+        accountId: stmt.account.id,
+        accountName: stmt.account.name,
+        fileName: stmt.metadata?.fileName,
+        ingestedAt: stmt.ingestedAt,
+        periodStart: stmt.statementPeriodStart,
+        periodEnd: stmt.statementPeriodEnd,
+        transactionCount: stmt.transactions.length,
+        verificationStatus: stmt.verificationStatus,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to list statements';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.delete('/api/statements/:statementId', async (req, res) => {
+  try {
+    const { statementId } = req.params;
+    const userId = ensureUserId(req.query.userId as string);
+
+    // Verify statement belongs to user before deleting
+    const statement = await container.storage.loadStatement(statementId);
+    if (!statement) {
+      return res.status(404).json({ error: 'Statement not found' });
+    }
+
+    if (statement.metadata?.userId !== userId) {
+      return res.status(403).json({ error: 'Not authorized to delete this statement' });
+    }
+
+    await container.storage.deleteStatement(statementId);
+
+    console.log(`✅ Statement ${statementId} deleted by user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Statement deleted successfully',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete statement';
+    console.error('Statement deletion error:', error);
+    res.status(500).json({ error: message });
+  }
+});
+
 app.post('/api/advice/ask', async (req, res) => {
   try {
     const userId = ensureUserId(req.body.userId);

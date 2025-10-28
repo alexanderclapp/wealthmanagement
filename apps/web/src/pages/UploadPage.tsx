@@ -1,15 +1,79 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useFinancialData } from '../context/FinancialDataContext';
 import { usePlaidLink } from 'react-plaid-link';
+import dayjs from 'dayjs';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+const DEMO_USER_ID = 'user-001';
+
+interface Statement {
+  id: string;
+  accountId: string;
+  accountName: string;
+  fileName?: string;
+  ingestedAt: string;
+  periodStart: string;
+  periodEnd: string;
+  transactionCount: number;
+  verificationStatus: string;
+}
 
 const UploadPage = () => {
-  const { ingestPdf, requestLinkToken, completePlaidLink, state } = useFinancialData();
+  const { ingestPdf, requestLinkToken, completePlaidLink, state, refresh } = useFinancialData();
   const [uploading, setUploading] = useState(false);
   const [plaidLoading, setPlaidLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [plaidError, setPlaidError] = useState<string | null>(null);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [statements, setStatements] = useState<Statement[]>([]);
+  const [loadingStatements, setLoadingStatements] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchStatements = async () => {
+    setLoadingStatements(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/statements?userId=${DEMO_USER_ID}`);
+      if (response.ok) {
+        const data = await response.json();
+        setStatements(data.statements || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch statements:', error);
+    } finally {
+      setLoadingStatements(false);
+    }
+  };
+
+  const handleDelete = async (statementId: string) => {
+    if (!confirm('Are you sure you want to delete this statement? All associated transactions will be removed.')) {
+      return;
+    }
+
+    setDeletingId(statementId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/statements/${statementId}?userId=${DEMO_USER_ID}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete statement');
+      }
+
+      setMessage('Statement deleted successfully');
+      await fetchStatements();
+      await refresh(); // Refresh financial data
+    } catch (error) {
+      console.error(error);
+      setMessage(error instanceof Error ? error.message : 'Failed to delete statement');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatements();
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     if (!file.type.includes('pdf')) {
@@ -25,6 +89,7 @@ const UploadPage = () => {
       setMessage(
         `Statement ingested successfully! Processed ${transactionCount} transaction${transactionCount !== 1 ? 's' : ''}. Navigate to Insights to review the updated dashboard.`
       );
+      await fetchStatements(); // Refresh statements list
     } catch (error) {
       console.error(error);
       const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
@@ -149,6 +214,73 @@ const UploadPage = () => {
         </div>
       )}
 
+      {statements.length > 0 && (
+        <div style={{ marginTop: 40 }}>
+          <h3 style={{ marginBottom: 16 }}>📂 Uploaded Statements ({statements.length})</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Period</th>
+                  <th>Transactions</th>
+                  <th>Uploaded</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statements.map((stmt) => (
+                  <tr key={stmt.id}>
+                    <td>{stmt.fileName || 'Unknown'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {dayjs(stmt.periodStart).format('MMM D')} - {dayjs(stmt.periodEnd).format('MMM D, YYYY')}
+                    </td>
+                    <td>{stmt.transactionCount}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{dayjs(stmt.ingestedAt).format('MMM D, YYYY h:mm A')}</td>
+                    <td>
+                      <span
+                        className="chip"
+                        style={{
+                          fontSize: '0.75rem',
+                          background:
+                            stmt.verificationStatus === 'PASS'
+                              ? '#d1fae5'
+                              : stmt.verificationStatus === 'REVIEW'
+                              ? '#fef3c7'
+                              : '#fee2e2',
+                          color:
+                            stmt.verificationStatus === 'PASS'
+                              ? '#047857'
+                              : stmt.verificationStatus === 'REVIEW'
+                              ? '#92400e'
+                              : '#b91c1c',
+                        }}
+                      >
+                        {stmt.verificationStatus}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => handleDelete(stmt.id)}
+                        disabled={deletingId === stmt.id}
+                        style={{
+                          ...deleteButtonStyle,
+                          opacity: deletingId === stmt.id ? 0.5 : 1,
+                          cursor: deletingId === stmt.id ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {deletingId === stmt.id ? 'Deleting...' : '🗑️ Delete'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {linkToken && (
         <PlaidLinkLauncher
           token={linkToken}
@@ -182,6 +314,18 @@ const buttonStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: 'pointer',
   width: 'fit-content',
+};
+
+const deleteButtonStyle: React.CSSProperties = {
+  padding: '6px 12px',
+  borderRadius: 6,
+  background: '#fee2e2',
+  border: '1px solid #fca5a5',
+  color: '#b91c1c',
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+  transition: 'all 0.2s ease',
 };
 
 const dropZoneStyle: React.CSSProperties = {
