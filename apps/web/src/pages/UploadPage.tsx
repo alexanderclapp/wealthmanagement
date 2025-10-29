@@ -3,7 +3,9 @@ import { useFinancialData } from '../context/FinancialDataContext';
 import { usePlaidLink } from 'react-plaid-link';
 import dayjs from 'dayjs';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+// In production (Heroku), the backend API is served from the same origin
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
+  (window.location.hostname === 'localhost' ? 'http://localhost:4000' : '');
 const DEMO_USER_ID = 'user-001';
 
 interface Statement {
