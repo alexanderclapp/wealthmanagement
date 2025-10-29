@@ -90,17 +90,47 @@ const UploadPage = () => {
 
     setUploading(true);
     setMessage(null);
+    
+    // Show progress messages
+    const progressMessages = [
+      '📄 Extracting text from PDF...',
+      '🤖 Analyzing statement with AI...',
+      '💰 Extracting transactions...',
+      '✨ Almost done, processing data...',
+    ];
+    
+    let currentStep = 0;
+    const progressInterval = setInterval(() => {
+      if (currentStep < progressMessages.length) {
+        setMessage(progressMessages[currentStep]);
+        currentStep++;
+      }
+    }, 8000); // Update every 8 seconds
+
     try {
       const result = await ingestPdf(file);
+      clearInterval(progressInterval);
       const transactionCount = result?.transactionsProcessed ?? 0;
       setMessage(
-        `Statement ingested successfully! Processed ${transactionCount} transaction${transactionCount !== 1 ? 's' : ''}. Navigate to Insights to review the updated dashboard.`
+        `✅ Statement ingested successfully! Processed ${transactionCount} transaction${transactionCount !== 1 ? 's' : ''}. Navigate to Insights to review the updated dashboard.`
       );
       await fetchStatements(); // Refresh statements list
     } catch (error) {
+      clearInterval(progressInterval);
       console.error(error);
-      const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
-      setMessage(errorMessage);
+      
+      // If it's a timeout, check if it actually succeeded
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.includes('timeout') || errorMessage.includes('Failed to fetch')) {
+        setMessage('⏳ Upload is taking longer than expected. Please wait 30 seconds and refresh the page to check if your statement was processed.');
+        // Still try to refresh statements after a delay
+        setTimeout(async () => {
+          await fetchStatements();
+          await refresh();
+        }, 30000);
+      } else {
+        setMessage(`❌ ${errorMessage || 'Upload failed. Please try again.'}`);
+      }
     } finally {
       setUploading(false);
     }
@@ -178,7 +208,14 @@ const UploadPage = () => {
           />
           <label htmlFor="pdf-upload" style={{ cursor: uploading ? 'not-allowed' : 'pointer', width: '100%', textAlign: 'center' }}>
             {uploading ? (
-              <p style={{ margin: 0, color: '#6b7280' }}>Uploading...</p>
+              <>
+                <p style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600, color: '#2563eb' }}>
+                  ⏳ Processing PDF...
+                </p>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: '#6b7280' }}>
+                  This may take 30-60 seconds for AI analysis
+                </p>
+              </>
             ) : (
               <>
                 <p style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600 }}>📄 Drop PDF here or click to browse</p>
@@ -210,7 +247,22 @@ const UploadPage = () => {
       )}
 
       {message && (
-        <div className="chip" style={{ marginTop: 24, background: '#d1fae5', color: '#047857' }}>
+        <div 
+          className="chip" 
+          style={{ 
+            marginTop: 24, 
+            padding: '12px 16px',
+            background: message.includes('❌') ? '#fee2e2' : 
+                       message.includes('⏳') ? '#fef3c7' : 
+                       message.includes('✅') ? '#d1fae5' : '#dbeafe',
+            color: message.includes('❌') ? '#b91c1c' : 
+                   message.includes('⏳') ? '#92400e' : 
+                   message.includes('✅') ? '#047857' : '#1e40af',
+            border: `1px solid ${message.includes('❌') ? '#fca5a5' : 
+                                message.includes('⏳') ? '#fcd34d' : 
+                                message.includes('✅') ? '#86efac' : '#93c5fd'}`,
+          }}
+        >
           {message}
         </div>
       )}

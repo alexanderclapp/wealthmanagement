@@ -290,10 +290,10 @@ Statement:
 ${relevantText}`;
 
       const response = await openRouterClient.chat.completions.create({
-        model: 'openai/gpt-4o-mini',
+        model: 'anthropic/claude-3-haiku', // Faster and cheaper than GPT-4o-mini
         messages: [{ role: 'user', content: prompt }],
         temperature: 0,
-        max_tokens: 8000, // Increased to handle more transactions
+        max_tokens: 8000,
       });
 
       const content = response.choices[0]?.message?.content;
